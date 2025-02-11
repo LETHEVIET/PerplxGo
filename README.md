@@ -15,7 +15,7 @@ To install the CLI application, clone the repository and navigate to the project
 
 ```bash
 git clone <repository-url>
-cd my-go-cli
+cd perplxgo
 ```
 
 Then, run the following command to download the dependencies:
@@ -35,13 +35,13 @@ go run cmd/main.go
 You can also build the application into a binary:
 
 ```bash
-go build -o my-go-cli cmd/main.go
+go build -o perplxgo cmd/main.go
 ```
 
 After building, you can run the binary:
 
 ```bash
-./my-go-cli
+./perplxgo
 ```
 
 ## Contributing

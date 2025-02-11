@@ -1,4 +1,4 @@
-module my-go-cli
+module perplxgo
 
 go 1.18
 
