@@ -1,106 +1,146 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/log"
+	"github.com/google/generative-ai-go/genai"
+	"google.golang.org/api/iterator"
+	"google.golang.org/api/option"
 )
 
-// Define the model
-type model struct {
-	choices  []string
-	cursor   int
-	selected map[int]struct{}
+func getDraculaColors() map[string]string {
+	draculaColors := map[string]string{
+		"Background":  "#282a36",
+		"CurrentLine": "#44475a",
+		"Selection":   "#44475a",
+		"Foreground":  "#f8f8f2",
+		"Comment":     "#6272a4",
+		"Cyan":        "#8be9fd",
+		"Green":       "#50fa7b",
+		"Orange":      "#ffb86c",
+		"Pink":        "#ff79c6",
+		"Purple":      "#bd93f9",
+		"Red":         "#ff5555",
+		"Yellow":      "#f1fa8c",
+	}
+	return draculaColors
 }
 
-func initialModel() model {
-	return model{
-		choices: []string{"A", "B", "C"},
+type llm_response struct {
+	prompt   string
+	response string
+	iter     *genai.GenerateContentResponseIterator
+}
 
-		selected: make(map[int]struct{}),
+type StreamingMsg struct {
+	err  error
+	done bool
+}
+
+type StreamingErr struct {
+	err error
+}
+
+func initialLLMResponse(prompt string) llm_response {
+	ctx := context.Background()
+	client, err := genai.NewClient(ctx, option.WithAPIKey(os.Getenv("GOOGLE_API_KEY")))
+
+	_ = err
+
+	model := client.GenerativeModel("gemini-pro") // Or your desired model
+	iter := model.GenerateContentStream(ctx, genai.Text(prompt))
+	return llm_response{
+		prompt:   prompt,
+		response: "",
+		iter:     iter,
 	}
 }
 
-func (m model) Init() tea.Cmd {
+func (r llm_response) Init() tea.Cmd {
 	// Just return `nil`, which means "no I/O right now, please."
-	return nil
+	return func() tea.Msg {
+		return StreamingMsg{err: nil, done: false}
+	}
 }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (r llm_response) Streaming() (tea.Model, tea.Cmd) {
+
+	resp, err := r.iter.Next()
+	if errors.Is(err, iterator.Done) {
+		return r, func() tea.Msg {
+			return StreamingMsg{done: true}
+		}
+	}
+	if err != nil {
+		log.Error(err)
+	}
+	for _, cand := range resp.Candidates {
+		if len(cand.Content.Parts) > 0 {
+			if t, ok := cand.Content.Parts[0].(genai.Text); ok {
+				// fmt.Println("current llm resp", string(t))
+				// fmt.Println("current r.response", r.response)
+				r.response = r.response + string(t)
+
+				// fmt.Println(r.response)
+				// fmt.Println("current llm resp", string(t))
+				// fmt.Println("current r.response", r.response)
+			}
+
+		}
+	}
+	return r, func() tea.Msg {
+		return StreamingMsg{
+			err:  nil,
+			done: false,
+		}
+	}
+}
+
+func (r llm_response) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	log.Debug(r)
 	switch msg := msg.(type) {
-
-	// Is it a key press?
 	case tea.KeyMsg:
-
-		// Cool, what was the actual key pressed?
 		switch msg.String() {
-
-		// These keys should exit the program.
 		case "ctrl+c", "q":
-			return m, tea.Quit
-
-		// The "up" and "k" keys move the cursor up
-		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
-			}
-
-		// The "down" and "j" keys move the cursor down
-		case "down", "j":
-			if m.cursor < len(m.choices)-1 {
-				m.cursor++
-			}
-
-		// The "enter" key and the spacebar (a literal space) toggle
-		// the selected state for the item that the cursor is pointing at.
-		case "enter", " ":
-			_, ok := m.selected[m.cursor]
-			if ok {
-				delete(m.selected, m.cursor)
-			} else {
-				m.selected[m.cursor] = struct{}{}
-			}
+			return r, tea.Quit
 		}
+
+	case StreamingMsg:
+		if msg.err != nil {
+			return r, tea.Quit
+		}
+
+		if msg.done {
+			return r, tea.Quit
+		}
+
+		return r.Streaming()
 	}
 
-	// Return the updated model to the Bubble Tea runtime for processing.
-	// Note that we're not returning a command.
-	return m, nil
+	return r, nil
 }
 
-func (m model) View() string {
-	// The header
-	s := "What should we buy at the market?\n\n"
-
-	// Iterate over our choices
-	for i, choice := range m.choices {
-
-		// Is the cursor pointing at this choice?
-		cursor := " " // no cursor
-		if m.cursor == i {
-			cursor = ">" // cursor!
-		}
-
-		// Is this choice selected?
-		checked := " " // not selected
-		if _, ok := m.selected[i]; ok {
-			checked = "x" // selected!
-		}
-
-		// Render the row
-		s += fmt.Sprintf("%s [%s] %s\n", cursor, checked, choice)
-	}
-
-	// The footer
-	s += "\nPress q to quit.\n"
-
-	// Send the UI for rendering
-	return s
+func (r llm_response) View() string {
+	out, err := glamour.Render(r.response, "dark")
+	_ = err
+	style := lipgloss.NewStyle()
+	return style.Border(lipgloss.NormalBorder()).Render(out)
 }
 
-func main() {
+func print_banner() {
 
+	bannerStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(getDraculaColors()["Green"]))
+
+	// https://patorjk.com/software/taag/#p=display&h=1&v=1&f=Slant&t=PerplxGo
 	banner := `
     ____                      __       ______     
    / __ \ ___   _____ ____   / /_  __ / ____/____ 
@@ -109,10 +149,58 @@ func main() {
 /_/     \___//_/   / .___//_//_/|_| \____/ \____/ 
                   /_/                             
 `
-	fmt.Println(banner)
-	p := tea.NewProgram(initialModel())
+	fmt.Println(bannerStyle.Render(banner))
+
+	w, _ := lipgloss.Size(banner)
+
+	var style = lipgloss.NewStyle().
+		Italic(true).
+		Width(w).Align(lipgloss.Center)
+
+	quote := "Curiosity changes everything."
+
+	fmt.Println(style.Render(quote))
+}
+
+func ask() {
+	var question string
+
+	huh.NewInput().
+		Title("Ask anything...").
+		Value(&question).
+		// WithTheme()
+		Run() // this is blocking...
+
+	out, err := glamour.Render("# "+question, "dark")
+
+	_ = err
+	fmt.Println(out)
+
+	p := tea.NewProgram(initialLLMResponse(question))
+
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Alas, there's been an error: %v", err)
 		os.Exit(1)
 	}
+}
+
+func main() {
+
+	logLevelSting := os.Getenv("LOG_LEVEL")
+	switch logLevelSting {
+	case "DEBUG":
+		log.SetLevel(log.DebugLevel)
+	case "INFO":
+		log.SetLevel(log.InfoLevel)
+	case "WARN":
+		log.SetLevel(log.WarnLevel)
+	case "ERROR":
+		log.SetLevel(log.ErrorLevel)
+	case "FATAL":
+		log.SetLevel(log.FatalLevel)
+
+	}
+
+	print_banner()
+	ask()
 }
