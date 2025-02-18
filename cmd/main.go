@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/huh"
@@ -35,9 +37,12 @@ func getDraculaColors() map[string]string {
 }
 
 type llm_response struct {
-	prompt   string
-	response string
-	iter     *genai.GenerateContentResponseIterator
+	prompt            string
+	response          string
+	rendered_response string
+	iter              *genai.GenerateContentResponseIterator
+	spinner           spinner.Model
+	done              bool
 }
 
 type StreamingMsg struct {
@@ -52,29 +57,52 @@ type StreamingErr struct {
 func initialLLMResponse(prompt string) llm_response {
 	ctx := context.Background()
 	client, err := genai.NewClient(ctx, option.WithAPIKey(os.Getenv("GOOGLE_API_KEY")))
+	if err != nil {
+		log.Fatalf("Failed to create client: %v", err)
+	}
 
-	_ = err
+	model := client.GenerativeModel("gemini-2.0-flash-lite-preview-02-05")
+	if model == nil {
+		log.Fatalf("Failed to get generative model")
+	}
 
-	model := client.GenerativeModel("gemini-pro") // Or your desired model
 	iter := model.GenerateContentStream(ctx, genai.Text(prompt))
+	if iter == nil {
+		log.Fatalf("Failed to create content stream iterator")
+	}
+
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(getDraculaColors()["Selection"]))
 	return llm_response{
-		prompt:   prompt,
-		response: "",
-		iter:     iter,
+		prompt:            prompt,
+		response:          "",
+		rendered_response: "",
+		iter:              iter,
+		spinner:           s,
+		done:              false,
 	}
 }
 
 func (r llm_response) Init() tea.Cmd {
-	// Just return `nil`, which means "no I/O right now, please."
-	return func() tea.Msg {
-		return StreamingMsg{err: nil, done: false}
-	}
+	return tea.Batch(
+		func() tea.Msg {
+			return StreamingMsg{err: nil, done: false}
+		},
+		r.spinner.Tick,
+	)
 }
 
-func (r llm_response) Streaming() (tea.Model, tea.Cmd) {
+func calculate_height(text string) int {
+	lines := strings.Split(text, "\n")
+	return len(lines) //+ 1
+}
+
+func (r llm_response) Streaming() (llm_response, tea.Cmd) {
 
 	resp, err := r.iter.Next()
 	if errors.Is(err, iterator.Done) {
+		r.done = true
 		return r, func() tea.Msg {
 			return StreamingMsg{done: true}
 		}
@@ -85,23 +113,23 @@ func (r llm_response) Streaming() (tea.Model, tea.Cmd) {
 	for _, cand := range resp.Candidates {
 		if len(cand.Content.Parts) > 0 {
 			if t, ok := cand.Content.Parts[0].(genai.Text); ok {
-				// fmt.Println("current llm resp", string(t))
-				// fmt.Println("current r.response", r.response)
 				r.response = r.response + string(t)
-
-				// fmt.Println(r.response)
-				// fmt.Println("current llm resp", string(t))
-				// fmt.Println("current r.response", r.response)
 			}
 
 		}
 	}
+	out, err := glamour.Render(r.response, "dark")
+	_ = err
+
+	r.rendered_response = out
+
 	return r, func() tea.Msg {
 		return StreamingMsg{
 			err:  nil,
 			done: false,
 		}
 	}
+
 }
 
 func (r llm_response) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -122,17 +150,37 @@ func (r llm_response) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return r, tea.Quit
 		}
 
-		return r.Streaming()
+		r, streaming_cmd := r.Streaming()
+
+		return r, tea.Batch(
+			streaming_cmd,
+			func() tea.Msg {
+				return tea.WindowSizeMsg{
+					// Width:  80,
+					Height: calculate_height(r.rendered_response),
+				}
+			},
+		)
+	case spinner.TickMsg:
+		var spinner_cmd tea.Cmd
+		r.spinner, spinner_cmd = r.spinner.Update(msg)
+		return r, spinner_cmd
 	}
 
-	return r, nil
+	return r, func() tea.Msg {
+		return tea.WindowSizeMsg{
+			// Width:  80,
+			Height: calculate_height(r.rendered_response),
+		}
+	}
 }
 
 func (r llm_response) View() string {
-	out, err := glamour.Render(r.response, "dark")
-	_ = err
-	style := lipgloss.NewStyle()
-	return style.Border(lipgloss.NormalBorder()).Render(out)
+	if r.done {
+		return r.rendered_response
+	}
+	footer := r.spinner.View() + "Generating..."
+	return r.rendered_response + footer
 }
 
 func print_banner() {
@@ -155,33 +203,42 @@ func print_banner() {
 
 	var style = lipgloss.NewStyle().
 		Italic(true).
-		Width(w).Align(lipgloss.Center)
+		Width(w).Align(lipgloss.Center).
+		Foreground(lipgloss.Color(getDraculaColors()["Selection"]))
 
 	quote := "Curiosity changes everything."
 
-	fmt.Println(style.Render(quote))
+	fmt.Println(style.Render(quote) + "\n")
 }
 
 func ask() {
 	var question string
 
 	huh.NewInput().
-		Title("Ask anything...").
+		Title("ʕ·ᴥ·ʔ Ask anything...").
 		Value(&question).
 		// WithTheme()
 		Run() // this is blocking...
 
-	out, err := glamour.Render("# "+question, "dark")
+	style := lipgloss.NewStyle().
+		Bold(true).
+		Padding(0, 1).
+		// Margin(0, 2).
+		Background(lipgloss.Color(getDraculaColors()["Selection"])).
+		Foreground(lipgloss.Color(getDraculaColors()["Foreground"]))
 
-	_ = err
-	fmt.Println(out)
+	fmt.Println("⚡" + style.Render(question))
 
 	p := tea.NewProgram(initialLLMResponse(question))
 
-	if _, err := p.Run(); err != nil {
+	value, err := p.Run()
+
+	if err != nil {
 		fmt.Printf("Alas, there's been an error: %v", err)
 		os.Exit(1)
 	}
+
+	_ = value
 }
 
 func main() {
@@ -198,7 +255,8 @@ func main() {
 		log.SetLevel(log.ErrorLevel)
 	case "FATAL":
 		log.SetLevel(log.FatalLevel)
-
+	default:
+		log.SetLevel(log.InfoLevel)
 	}
 
 	print_banner()

@@ -5,6 +5,16 @@ go 1.23
 toolchain go1.23.5
 
 require (
+	github.com/charmbracelet/bubbletea v1.3.2
+	github.com/charmbracelet/glamour v0.8.0
+	github.com/charmbracelet/huh v0.6.0
+	github.com/charmbracelet/lipgloss v1.0.0
+	github.com/charmbracelet/log v0.4.0
+	github.com/google/generative-ai-go v0.19.0
+	google.golang.org/api v0.220.0
+)
+
+require (
 	cloud.google.com/go v0.116.0 // indirect
 	cloud.google.com/go/ai v0.8.0 // indirect
 	cloud.google.com/go/auth v0.14.1 // indirect
@@ -17,11 +27,6 @@ require (
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/catppuccin/go v0.3.0 // indirect
 	github.com/charmbracelet/bubbles v0.20.0 // indirect
-	github.com/charmbracelet/bubbletea v1.3.2 // indirect
-	github.com/charmbracelet/glamour v0.8.0 // indirect
-	github.com/charmbracelet/huh v0.6.0 // indirect
-	github.com/charmbracelet/lipgloss v1.0.0 // indirect
-	github.com/charmbracelet/log v0.4.0 // indirect
 	github.com/charmbracelet/x/ansi v0.8.0 // indirect
 	github.com/charmbracelet/x/exp/strings v0.0.0-20250210215829-6aa2bddf6f72 // indirect
 	github.com/charmbracelet/x/term v0.2.1 // indirect
@@ -32,14 +37,11 @@ require (
 	github.com/go-logfmt/logfmt v0.6.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/google/generative-ai-go v0.19.0 // indirect
-	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.4 // indirect
 	github.com/googleapis/gax-go/v2 v2.14.1 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
@@ -68,8 +70,6 @@ require (
 	golang.org/x/term v0.29.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
-	google.golang.org/api v0.220.0 // indirect
-	google.golang.org/genai v0.2.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20241209162323-e6fa225c2576 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250127172529-29210b9bc287 // indirect
 	google.golang.org/grpc v1.70.0 // indirect
